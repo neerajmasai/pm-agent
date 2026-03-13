@@ -2,6 +2,58 @@
 
 A set of 7 Claude Code skills that turn Claude into a product manager for GitHub Projects v2. Built for the [Presto Player](https://prestoplayer.com) project, but adaptable to any GitHub org/project.
 
+## Quick Start (3 steps)
+
+### Step 1: Install prerequisites
+
+Make sure you have these installed:
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) — the CLI tool (`npm install -g @anthropic-ai/claude-code`)
+- [GitHub CLI](https://cli.github.com/) — `brew install gh` (macOS) or see link for other platforms
+
+### Step 2: Run the setup
+
+```bash
+git clone https://github.com/neerajmasai/presto-pm-agent.git
+cd presto-pm-agent
+./setup.sh
+```
+
+The setup script will:
+- Verify `gh` is installed and authenticated
+- Symlink all 7 skill folders into `~/.claude/skills/`
+- Symlinks mean `git pull` automatically updates your skills
+
+### Step 3: Add GitHub project scopes (one-time)
+
+```bash
+gh auth refresh -h github.com -s read:project -s project
+```
+
+This opens a browser window — approve the additional scopes. You only need to do this once.
+
+### Verify it works
+
+Open Claude Code in any directory and type:
+
+```
+/pm-daily
+```
+
+You should see a daily sprint briefing with current iteration status.
+
+---
+
+## Let Claude Code Set It Up For You
+
+Copy-paste this prompt into Claude Code and it will handle the entire setup:
+
+```
+Clone the repo https://github.com/neerajmasai/presto-pm-agent.git into ~/presto-pm-agent, run the setup.sh script, and then run `gh auth refresh -h github.com -s read:project -s project` to add project scopes. After setup is complete, run /pm-daily to verify everything works.
+```
+
+---
+
 ## Skills
 
 | Skill | Command | Purpose |
@@ -14,54 +66,58 @@ A set of 7 Claude Code skills that turn Claude into a product manager for GitHub
 | Velocity | `/pm-velocity` | Sprint velocity trends, team workload, scope creep tracking, cross-repo split |
 | Risk Tracking | `/pm-risk` | At-risk items, cross-repo dependencies, stakeholder status updates |
 
-## Prerequisites
-
-1. **Claude Code** — [Install Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
-2. **GitHub CLI (`gh`)** — [Install GitHub CLI](https://cli.github.com/)
-3. **GitHub CLI project scopes** — Run once:
-   ```bash
-   gh auth refresh -h github.com -s read:project -s project
-   ```
-4. **GitHub Project iterations** — Iterations must be pre-created in the GitHub UI (the API doesn't support creating them):
-   https://github.com/orgs/prestomade/projects/5/settings → Iteration field → Add iteration
-
-## Installation
-
-### Quick Setup (recommended)
+## Usage Examples
 
 ```bash
-git clone https://github.com/neerajmasai/presto-pm-agent.git
-cd presto-pm-agent
-./setup.sh
+# Morning standup — run this every day
+/pm-daily
+
+# Sprint lifecycle
+/pm-sprint plan       # Add backlog items to current/next sprint
+/pm-sprint start      # Set up the next sprint
+/pm-sprint end        # Close sprint, carry over incomplete items
+/pm-sprint status     # Sprint health and burndown
+
+# Backlog management
+/pm-triage            # Deduplicate, groom, create issues, split epics, close stale
+
+# Reporting
+/pm-retro             # Sprint retrospective with completion stats
+/pm-velocity          # Velocity trends across sprints
+/pm-risk              # At-risk items and cross-repo dependencies
+/pm-roadmap           # Quarterly roadmap and release planning
 ```
 
-This creates symlinks from `~/.claude/skills/pm-*` to the repo, so you get updates automatically when you `git pull`.
+## Typical Daily Workflow
 
-### Manual Setup
-
-Copy the skill folders to your Claude Code skills directory:
-
-```bash
-cp -r skills/pm-* ~/.claude/skills/
-```
-
-### Verify Installation
-
-Open Claude Code and type `/pm-daily` — you should see the skill trigger and produce a daily briefing.
+1. Start your day with `/pm-daily` to see sprint status and action items
+2. Use `/pm-sprint status` mid-sprint to check burndown
+3. Run `/pm-triage` weekly to keep the backlog clean
+4. At sprint end, run `/pm-retro` for the retrospective, then `/pm-sprint end` to close it out
+5. Use `/pm-sprint plan` to load up the next sprint
+6. Run `/pm-velocity` after 2+ sprints to see trends
 
 ## Configuration
 
-The skills are configured for the Presto Player project:
+The skills are pre-configured for the Presto Player project:
 
-- **Org**: `prestomade`
-- **Project**: #5 (ID: `PVT_kwDOBL-zrs4BPoD9`)
-- **Repos**: `prestomade/presto-player`, `prestomade/presto-player-pro`
-- **Teams**: Squad 1, Squad 2, Squad 3
-- **Status flow**: Todo → In Progress → In Review → QA → Done
+| Setting | Value |
+|---------|-------|
+| **Org** | `prestomade` |
+| **Project** | #5 (ID: `PVT_kwDOBL-zrs4BPoD9`) |
+| **Repos** | `prestomade/presto-player`, `prestomade/presto-player-pro` |
+| **Teams** | Squad 1, Squad 2, Squad 3 |
+| **Status flow** | Todo → In Progress → In Review → QA → Done |
+
+### Important: Iterations
+
+Iterations (sprints) must be **pre-created in the GitHub UI** — the API doesn't support creating them:
+
+https://github.com/orgs/prestomade/projects/5/settings → Iteration field → Add iteration
 
 ### Adapting for a different project
 
-To use these skills with a different GitHub org/project, update the following in each `SKILL.md`:
+To use these skills with a different GitHub org/project, update the following in each `skills/pm-*/SKILL.md`:
 
 1. **Org name** — replace `prestomade` with your org
 2. **Project number** — replace `5` with your project number
@@ -97,51 +153,39 @@ gh api graphql -f query='
 }'
 ```
 
-## Usage Examples
-
-```
-# Morning standup
-/pm-daily
-
-# Plan the next sprint
-/pm-sprint plan
-
-# Start a new sprint
-/pm-sprint start
-
-# End current sprint (carry over / close incomplete items)
-/pm-sprint end
-
-# Check sprint health
-/pm-sprint status
-
-# Triage the backlog
-/pm-triage
-
-# Sprint retrospective
-/pm-retro
-
-# Velocity metrics
-/pm-velocity
-
-# Risk report
-/pm-risk
-
-# Roadmap view
-/pm-roadmap
-```
-
 ## How It Works
 
 These skills are markdown files (`SKILL.md`) that instruct Claude Code how to interact with the GitHub Projects v2 GraphQL API via the `gh` CLI. Each skill contains:
 
-- Context (org, project, field IDs)
-- Step-by-step workflow instructions
-- GraphQL queries and mutations
-- Output format templates
-- Error handling guidance
+- **Context** — org, project, field IDs, option IDs
+- **Workflow** — step-by-step instructions Claude follows
+- **Queries** — GraphQL queries to fetch project data
+- **Mutations** — GraphQL mutations to update items
+- **Output templates** — formatted report structures
+- **Error handling** — what to do when things go wrong
 
-Claude Code reads these instructions and executes the appropriate `gh` commands to fetch data, make mutations, and present formatted reports.
+Claude Code reads these instructions at runtime and executes the appropriate `gh` commands to fetch data, make mutations, and present formatted reports. No external services, databases, or API keys needed beyond `gh` authentication.
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `/pm-daily` not recognized | Run `./setup.sh` again, or check `ls ~/.claude/skills/pm-daily/SKILL.md` exists |
+| "missing required scopes" | Run `gh auth refresh -h github.com -s read:project -s project` |
+| "No current iteration" | Create an iteration in GitHub UI: Project Settings → Iteration → Add |
+| Empty sprint data | Make sure items are assigned to the current iteration in the project board |
+| `gh` not found | Install GitHub CLI: `brew install gh` (macOS) or https://cli.github.com/ |
+
+## Updating
+
+Since the setup script uses symlinks, just pull the latest:
+
+```bash
+cd ~/presto-pm-agent
+git pull
+```
+
+Your skills are automatically updated — no reinstall needed.
 
 ## License
 
