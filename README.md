@@ -12,8 +12,8 @@ A set of 8 Claude Code skills that turn Claude into a project manager for **any 
 ### 2. Run the setup
 
 ```bash
-git clone https://github.com/neerajmasai/presto-pm-agent.git
-cd presto-pm-agent
+git clone https://github.com/neerajmasai/pm-agent.git
+cd pm-agent
 ./setup.sh
 ```
 
@@ -57,7 +57,7 @@ You should see a daily sprint briefing with current iteration status.
 Copy-paste this prompt into Claude Code:
 
 ```
-Clone the repo https://github.com/neerajmasai/presto-pm-agent.git into ~/pm-agent, run the setup.sh script, then run `gh auth refresh -h github.com -s read:project -s project` to add project scopes. After setup, run /pm-setup with my project URL to configure it.
+Clone the repo https://github.com/neerajmasai/pm-agent.git into ~/pm-agent, run the setup.sh script, then run `gh auth refresh -h github.com -s read:project -s project` to add project scopes. After setup, run /pm-setup with my project URL to configure it.
 ```
 
 ---
