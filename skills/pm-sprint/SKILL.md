@@ -1,69 +1,42 @@
 ---
 name: pm-sprint
 description: >
-  Full sprint lifecycle management for Presto Player — start sprint, end sprint,
-  plan sprint, check status, add/remove items. Manages iterations, assignments,
-  and squad capacity on GitHub Project #5.
+  Full sprint lifecycle management for any GitHub project — start sprint, end
+  sprint, plan sprint, check status, add/remove items. Use this skill when the
+  user says "start sprint", "end sprint", "plan sprint", "sprint status",
+  "add to sprint", "remove from sprint", "carry over items", "sprint planning",
+  "next sprint", "close sprint", "sprint health", "what's left in the sprint",
+  "sprint burndown", or any request to manage iteration-based work. Also trigger
+  for "pm sprint", "manage sprint", "sprint capacity", or "assign to sprint".
 ---
 
 # PM Sprint Management
 
-## Context
+## Step 0: Load Config
 
-- **Org**: prestomade
-- **Project**: #5 (ID: `PVT_kwDOBL-zrs4BPoD9`)
-- **Repos**: `prestomade/presto-player`, `prestomade/presto-player-pro`
-- **Status flow**: Todo -> In progress -> In Review -> QA -> Done
-- **Teams**: Squad 1, Squad 2, Squad 3
+Read `~/.claude/pm-config.json`. If missing, tell the user to run `/pm-setup` first and stop. See `../pm-setup/references/config-loader.md` for config shape and rules.
 
-### Field IDs
-
-| Field | ID |
-|---|---|
-| Status | `PVTSSF_lADOBL-zrs4BPoD9zg9-yn0` |
-| Team | `PVTSSF_lADOBL-zrs4BPoD9zg9-yv8` |
-| Iteration | `PVTIF_lADOBL-zrs4BPoD9zg9-ywA` |
-
-### Status Option IDs
-
-| Status | ID |
-|---|---|
-| Todo | `f75ad846` |
-| In progress | `47fc9ee4` |
-| In Review | `6d3695e4` |
-| QA | `d0502a34` |
-| Done | `98236657` |
-
-### Team Option IDs
-
-| Team | ID |
-|---|---|
-| Squad 1 | `9282166a` |
-| Squad 2 | `8a5d08e5` |
-| Squad 3 | `478d0b17` |
+If config has no `iteration` field:
+> This project has no Iteration field — sprint management requires one. Add an Iteration field in your project settings, then run `/pm-setup` to refresh.
 
 ## On Trigger
 
-Ask the user what they want to do:
+Infer intent from the user's message, or ask:
 > What would you like to do?
-> 1. **Start sprint** — set up the next sprint with items
-> 2. **End sprint** — close current sprint, carry over incomplete items
+> 1. **Start sprint** — set up the next iteration with items
+> 2. **End sprint** — close current, carry over incomplete items
 > 3. **Plan sprint** — add backlog items to current/next sprint
-> 4. **Status** — current sprint health and burndown
-> 5. **Add/remove items** — manage items in the current sprint
+> 4. **Status** — sprint health and burndown
+> 5. **Add/remove items** — manage items in current sprint
 
-Or infer from their message if they said something like "start the next sprint" or "how's the sprint going".
-
-## Shared: Determine Iterations
-
-Always start by querying iteration config:
+## Shared: Query Iterations
 
 ```bash
 gh api graphql -f query='
 {
-  organization(login: "prestomade") {
-    projectV2(number: 5) {
-      field(name: "Iteration") {
+  <ownerType>(login: "<owner>") {
+    projectV2(number: <projectNumber>) {
+      field(name: "<fields.iteration.name>") {
         ... on ProjectV2IterationField {
           configuration {
             iterations { id title startDate duration }
@@ -81,30 +54,31 @@ Compute:
 - **Next**: earliest with `startDate > today`
 - **Previous**: most recent in `completedIterations`
 
-## Shared: Fetch All Project Items
+## Shared: Fetch Project Items
 
 ```bash
 gh api graphql --paginate -f query='
 query($endCursor: String) {
-  organization(login: "prestomade") {
-    projectV2(number: 5) {
+  <ownerType>(login: "<owner>") {
+    projectV2(number: <projectNumber>) {
       items(first: 100, after: $endCursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
           id
-          status: fieldValueByName(name: "Status") {
+          status: fieldValueByName(name: "<fields.status.name>") {
             ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
           }
-          team: fieldValueByName(name: "Team") {
+          # Include only if fields.team is not null:
+          team: fieldValueByName(name: "<fields.team.name>") {
             ... on ProjectV2ItemFieldSingleSelectValue { name }
           }
-          iteration: fieldValueByName(name: "Iteration") {
+          iteration: fieldValueByName(name: "<fields.iteration.name>") {
             ... on ProjectV2ItemFieldIterationValue { title startDate duration iterationId }
           }
           content {
             ... on Issue {
               number title url createdAt state body
-              repository { name }
+              repository { name nameWithOwner }
               assignees(first: 5) { nodes { login } }
               labels(first: 10) { nodes { name } }
             }
@@ -118,176 +92,77 @@ query($endCursor: String) {
 
 ## Workflow: Start Sprint
 
-1. Find the next upcoming iteration. If none exists:
-   > No upcoming iteration found. Please create one in the GitHub UI:
-   > https://github.com/orgs/prestomade/projects/5/settings → Iteration field → Add iteration
+1. Find the next upcoming iteration. If none:
+   > No upcoming iteration. Create one in GitHub: Project Settings → Iteration field → Add iteration.
 
-2. Show the next iteration details:
-   ```
-   ## Starting: <Iteration Name> (<start> - <end>)
-   ```
+2. Show carried-over items (already assigned to next iteration).
 
-3. List items already assigned to this iteration (carried over):
-   ```
-   ### Carried Over (N items)
-   - #<num> <title> — @<assignee> (<team>) — was: <previous status>
-   ```
-
-4. Ask: "Want to add more items from the backlog?"
-   - If yes, enter the **Plan Sprint** workflow below
+3. Ask: "Want to add more items from the backlog?" → enter Plan Sprint if yes.
 
 ## Workflow: End Sprint
 
-1. Show current iteration stats:
-   ```
-   ## Ending: <Iteration Name> (<start> - <end>)
+1. Show current iteration completion stats.
 
-   ### Summary
-   - Done: N items
-   - Not Done: N items (M in progress, K todo)
-   ```
-
-2. For each incomplete item, ask:
-   > **#<num> <title>** (<status>, @<assignee>)
+2. For each incomplete item, ask one at a time:
+   > **<repo>#<num> <title>** (<status>, @<assignee>)
    > → Carry to next sprint / Move to backlog / Close?
 
-   - **Carry**: Update iteration field to the next iteration's ID
-   - **Backlog**: Clear the iteration field using `clearProjectV2ItemFieldValue`
-   - **Close**: `gh issue close <number> --repo prestomade/<repo> --comment "Closed during sprint end — not carried forward."`
+3. Mutations:
+   - **Carry**: `updateProjectV2ItemFieldValue` — set iteration to next iteration's ID
+   - **Backlog**: `clearProjectV2ItemFieldValue` — clear the iteration field
+   - **Close**: `gh issue close <number> --repo <repo> --comment "Closed during sprint end — not carried forward."`
 
-3. After all items processed, show completion summary:
-   ```
-   ### Sprint Complete
-   - Completed: N items
-   - Carried to <Next Iteration>: N items
-   - Moved to backlog: N items
-   - Closed: N items
-   - Completion rate: X%
-   ```
-
-## Workflow: Plan Sprint
-
-1. Show current sprint items grouped by squad:
-   ```
-   ### Current Sprint: <Iteration Name>
-   **Squad 1 (N items)**: #1, #2, #3
-   **Squad 2 (N items)**: #4, #5
-   **Squad 3 (N items)**: #6
-   **Unassigned (N items)**: #7, #8
-   ```
-
-2. Fetch backlog items (on project, no iteration set, status != Done). Sort by:
-   - Priority labels first (`High Priority` at top)
-   - Then by `createdAt` oldest first
-
-3. Present each backlog item one at a time:
-   ```
-   ### Backlog Item: #<num> <title>
-   **Repo**: presto-player | **Age**: 45 days | **Labels**: enhancement
-   **Description**: <first 2-3 lines of body>
-
-   → Add to sprint? (yes/no/skip)
-   ```
-
-4. If user says yes, ask:
-   > Assign to which team? (Squad 1 / Squad 2 / Squad 3)
-   > Assign to? (enter GitHub username or skip)
-
-5. Execute mutations:
-   - Set iteration:
-     ```bash
-     gh api graphql -f query='mutation {
-       updateProjectV2ItemFieldValue(input: {
-         projectId: "PVT_kwDOBL-zrs4BPoD9"
-         itemId: "<ITEM_ID>"
-         fieldId: "PVTIF_lADOBL-zrs4BPoD9zg9-ywA"
-         value: { iterationId: "<ITERATION_ID>" }
-       }) { projectV2Item { id } }
-     }'
-     ```
-   - Set team:
-     ```bash
-     gh api graphql -f query='mutation {
-       updateProjectV2ItemFieldValue(input: {
-         projectId: "PVT_kwDOBL-zrs4BPoD9"
-         itemId: "<ITEM_ID>"
-         fieldId: "PVTSSF_lADOBL-zrs4BPoD9zg9-yv8"
-         value: { singleSelectOptionId: "<TEAM_OPTION_ID>" }
-       }) { projectV2Item { id } }
-     }'
-     ```
-   - Set assignee (if provided): `gh issue edit <number> --repo prestomade/<repo> --add-assignee <username>`
-
-6. After all items reviewed, show sprint plan summary:
-   ```
-   ### Sprint Plan Summary: <Iteration Name>
-   **Squad 1**: N items (list)
-   **Squad 2**: N items (list)
-   **Squad 3**: N items (list)
-   **Total**: N items
-   ```
-
-## Workflow: Status
-
-1. Fetch current iteration items (same as daily briefing)
-2. Display:
-   ```
-   ## Sprint Status: <Iteration Name> — Day X of Y
-
-   ### Burndown
-   Done: N/M (X%) — projected: on track / at risk / behind
-
-   ### By Status
-   - Todo: N | In Progress: N | In Review: N | QA: N | Done: N
-
-   ### By Squad
-   - Squad 1: N total (N done, N in progress, N todo)
-   - Squad 2: ...
-   - Squad 3: ...
-
-   ### At Risk
-   - Items with no progress (todo for >5 days)
-   - Items in progress >3 days with no PR
-   - Unassigned items
-   ```
-
-## Workflow: Add/Remove Items
-
-### Add
-1. Ask: "Enter issue number or search term"
-2. If number: `gh issue view <number> --repo prestomade/<repo> --json number,title,state,labels`
-3. If search: `gh search issues "<term>" --repo prestomade/presto-player --repo prestomade/presto-player-pro --json number,title,repository --limit 10`
-4. Confirm the item, then:
-   - If not on project: add it first
-     ```bash
-     # Get the issue's node ID
-     gh issue view <number> --repo prestomade/<repo> --json id --jq .id
-     # Add to project
-     gh api graphql -f query='mutation {
-       addProjectV2ItemById(input: {
-         projectId: "PVT_kwDOBL-zrs4BPoD9"
-         contentId: "<ISSUE_NODE_ID>"
-       }) { item { id } }
-     }'
-     ```
-   - Set iteration, team, status, assignee as prompted
-
-### Remove
-1. Ask: "Enter issue number to remove from sprint"
-2. Find the project item ID for that issue
-3. Clear iteration field:
    ```bash
+   # Set iteration
    gh api graphql -f query='mutation {
-     clearProjectV2ItemFieldValue(input: {
-       projectId: "PVT_kwDOBL-zrs4BPoD9"
+     updateProjectV2ItemFieldValue(input: {
+       projectId: "<projectId>"
        itemId: "<ITEM_ID>"
-       fieldId: "PVTIF_lADOBL-zrs4BPoD9zg9-ywA"
+       fieldId: "<fields.iteration.id>"
+       value: { iterationId: "<NEXT_ITERATION_ID>" }
      }) { projectV2Item { id } }
    }'
    ```
 
+4. Show summary: completed / carried / backlogged / closed counts + completion rate.
+
+## Workflow: Plan Sprint
+
+1. Show current sprint items grouped by team (if team field exists) or just as a flat list.
+
+2. Fetch backlog: items on the project with no iteration set, not in done status. Sort by priority labels first, then `createdAt` oldest first.
+
+3. Present each backlog item for triage — user decides: add to sprint (pick team + assignee) or skip.
+
+4. After all reviewed, show sprint plan summary with team breakdown (if applicable).
+
+## Workflow: Status
+
+```
+## Sprint: <Iteration Name> — Day X of Y
+
+### Burndown
+Done: N/M (X%) — on track / at risk / behind
+
+### By Status
+<each status>: N items
+
+### By Team (if team field exists)
+<team>: N total (N done, N active, N todo)
+
+### At Risk
+- Todo items untouched >5 days
+- Active items >3 days with no PR
+- Unassigned items
+```
+
+## Workflow: Add/Remove
+
+**Add**: Search → confirm → add to project if needed → set iteration/team/assignee.
+**Remove**: Find item → clear iteration field.
+
 ## Error Handling
-- No current iteration: show available iterations, suggest creating one in the UI
-- No next iteration (for End Sprint carry-over): warn user and suggest creating one first
-- Empty backlog: "No unscheduled items in backlog. All items are assigned to iterations."
-- Auth failure: prompt `gh auth refresh -h github.com -s read:project -s project`
+- No iteration field → explain and suggest adding one
+- No current/next iteration → show available ones
+- Empty backlog → "All items are assigned to iterations"
+- Auth failure → `gh auth refresh -h github.com -s read:project -s project`

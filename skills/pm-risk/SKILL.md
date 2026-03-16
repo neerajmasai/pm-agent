@@ -1,133 +1,109 @@
 ---
 name: pm-risk
 description: >
-  Risk and dependency tracking for Presto Player — identifies at-risk sprint
-  items, cross-repo dependencies, and generates stakeholder status updates.
+  Risk and dependency tracking for any GitHub project — identifies at-risk sprint
+  items, cross-repo dependencies, and generates stakeholder status updates. Use
+  this skill when the user says "risk report", "what's at risk", "blockers",
+  "dependencies", "stakeholder update", "status update for leadership",
+  "what's blocked", "what might slip", "sprint risks", "cross-repo dependencies",
+  or any request to surface problems, generate executive summaries, or identify
+  items that need attention. Also trigger for "pm risk", "risk assessment",
+  "what needs escalation", or "write a status email".
 ---
 
 # PM Risk & Dependency Tracking
 
-## Context
+## Step 0: Load Config
 
-- **Org**: prestomade
-- **Project**: #5 (ID: `PVT_kwDOBL-zrs4BPoD9`)
-- **Repos**: `prestomade/presto-player`, `prestomade/presto-player-pro`
+Read `~/.claude/pm-config.json`. If missing, tell the user to run `/pm-setup` first and stop. See `../pm-setup/references/config-loader.md` for config shape and rules.
 
 ### Risk Thresholds
-- **In Progress without PR**: >3 days = at risk
-- **In Review**: >2 days = at risk
-- **Target date approaching**: within 3 days = at risk
+- **Active status without PR**: >3 days → at risk
+- **Review-like status**: >2 days → at risk
+- **Target date approaching**: within 3 days → at risk
 - **Unassigned in sprint**: always flagged
 
-## On Trigger
+## Workflow
 
-Run all three analyses and present results:
+### 1. Fetch Current Sprint Items
 
-### 1. Fetch current sprint items
+Determine current iteration (if iteration field exists), fetch all project items, filter to current iteration. If no iteration field, use all non-done items.
 
-Determine current iteration (see iteration query pattern from other skills), then fetch all project items and filter to current iteration.
+Build the GraphQL query dynamically — only include fields that are non-null in config.
 
+### 2. Check Linked PRs for Active Items
+
+For items in active statuses (middle entries of `statusFlow`), check for PRs:
 ```bash
-gh api graphql --paginate -f query='
-query($endCursor: String) {
-  organization(login: "prestomade") {
-    projectV2(number: 5) {
-      items(first: 100, after: $endCursor) {
-        pageInfo { hasNextPage endCursor }
-        nodes {
-          id
-          status: fieldValueByName(name: "Status") {
-            ... on ProjectV2ItemFieldSingleSelectValue { name }
-          }
-          team: fieldValueByName(name: "Team") {
-            ... on ProjectV2ItemFieldSingleSelectValue { name }
-          }
-          iteration: fieldValueByName(name: "Iteration") {
-            ... on ProjectV2ItemFieldIterationValue { title startDate duration }
-          }
-          targetDate: fieldValueByName(name: "Target date") {
-            ... on ProjectV2ItemFieldDateValue { date }
-          }
-          content {
-            ... on Issue {
-              number title url createdAt state body
-              repository { name }
-              assignees(first: 5) { nodes { login } }
-              labels(first: 10) { nodes { name } }
-            }
-          }
-        }
-      }
-    }
-  }
-}'
+gh pr list --repo <repo> --search "<issue-number>" --json number,title,state,url --limit 5
 ```
 
-### 2. Check for linked PRs on at-risk items
+### 3. Classify Risk
 
-For items "In Progress" or "In Review", check for PRs:
-```bash
-gh pr list --repo prestomade/<repo> --search "<issue-number>" --json number,title,state,url --limit 5
-```
+Determine which statuses are what from `statusFlow`:
+- **First** = backlog/todo (not started)
+- **Last** = done
+- **Second-to-last** = review/QA-like (if 4+ statuses)
+- **Middle** = active/in-progress
 
-### 3. Analyze at-risk items
+Flag items matching:
+- Active status >3 days + no open/merged PR
+- Review-like status >2 days
+- Target date within 3 days + not done (only if `targetDate` field exists)
+- No assignee on any sprint item
 
-Flag items matching risk criteria:
-- "In Progress" >3 days and no linked open/merged PR
-- "In Review" >2 days
-- Target date within 3 days and status != Done
-- No assignee
+### 4. Cross-Repo Dependencies
 
-### 4. Detect cross-repo dependencies
+Only run when `repos` has 2+ entries.
 
 Scan issue bodies of current sprint items for:
-- URLs matching `github.com/prestomade/(presto-player|presto-player-pro)/issues/\d+`
-- Explicit text like "depends on #<num> in presto-player"
+- URLs matching `github.com/<owner>/.*/issues/\d+`
+- Text like "depends on #<num>", "blocked by #<num>"
 
-For each dependency found, check if the referenced issue is Done. If not, flag it.
+For each dependency found in a different repo, check if it's done. If not, flag it as blocking.
 
-### 5. Display risk report
+### 5. Present Risk Report
 
 ```
 ## Risk Report — <Iteration Name> (Day X of Y)
 
 ### At-Risk Items (N)
 
-**Stale In Progress (no PR, >3 days)**
-- #<num> <title> — @<assignee> (<team>) — <days> days, no PR
-  Action: Check with assignee on progress
+**Stale Active Items (no PR, >3 days)**
+- <repo>#<num> <title> — @<assignee> — <days> days, no PR
+  → Check with assignee on progress
 
-**Stuck In Review (>2 days)**
-- #<num> <title> — @<assignee> — PR #<n> open <days> days
-  Action: Ping reviewer or reassign
+**Stuck in Review (>2 days)**
+- <repo>#<num> <title> — @<assignee> — PR #<n> open <days> days
+  → Ping reviewer or reassign
 
 **Approaching Deadline**
-- #<num> <title> — target: <date> (<days> days away), status: <status>
-  Action: Prioritize or adjust deadline
+(only if targetDate field exists)
+- <repo>#<num> <title> — due <date> (<days> days), status: <status>
+  → Prioritize or adjust deadline
 
 **Unassigned**
-- #<num> <title> — in sprint but no assignee
-  Action: Assign to a squad member
+- <repo>#<num> <title> — in sprint, no assignee
+  → Assign to team member
 
 ### Cross-Repo Dependencies (N)
-
-- presto-player-pro #<num> depends on presto-player #<num> (<status>)
-  Blocking: dependency not yet Done
+(only if multiple repos)
+- <repo1>#<num> depends on <repo2>#<num> (<status>)
 
 ### Stakeholder Update
-
-Copy-paste ready update:
+(copy-paste ready)
 
 ---
 **Sprint: <Iteration Name> — Day X/Y**
-- Progress: N/M items done (X%)
-- Key wins: <list completed items this week>
-- Risks: <N items at risk — summarize>
-- Shipping next: <items in QA or Review>
+- Progress: N/M done (X%)
+- Key wins: <completed items this week>
+- Risks: <summary of flagged items>
+- Shipping next: <items in review/QA>
 ---
 ```
 
 ## Error Handling
-- No current sprint: "No active sprint. Run `/pm-sprint start` to begin one."
-- No at-risk items: "No at-risk items found. Sprint is on track!"
-- No cross-repo dependencies: "No cross-repo dependencies detected in current sprint items."
+- No active sprint → "No active sprint — run `/pm-sprint start`"
+- No risks found → "Sprint is on track — no at-risk items found."
+- Single repo → skip cross-repo dependency section
+- Config missing → `/pm-setup`

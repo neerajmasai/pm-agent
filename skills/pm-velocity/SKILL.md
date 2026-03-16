@@ -1,128 +1,78 @@
 ---
 name: pm-velocity
 description: >
-  Velocity metrics and team reporting for Presto Player — completion rates
-  across sprints, per-squad velocity trends, team workload, scope creep
-  tracking, and cross-repo split.
+  Velocity metrics and team reporting for any GitHub project — completion rates
+  across sprints, per-team velocity trends, individual workload, scope creep
+  tracking, and cross-repo split. Use this skill when the user says "velocity",
+  "metrics", "team performance", "sprint stats", "how fast are we going",
+  "completion rate", "burndown", "scope creep", "workload", "capacity",
+  "throughput", "how many items did we finish", "team report", or any request
+  for historical sprint data, productivity trends, or team workload analysis.
+  Also trigger for "pm velocity", "sprint metrics", "performance report", or
+  "are we improving".
 ---
 
 # PM Velocity & Metrics
 
-## Context
+## Step 0: Load Config
 
-- **Org**: prestomade
-- **Project**: #5 (ID: `PVT_kwDOBL-zrs4BPoD9`)
-- **Repos**: `prestomade/presto-player`, `prestomade/presto-player-pro`
-- **Teams**: Squad 1, Squad 2, Squad 3
-- **Capacity**: MVP uses raw item count (no story points)
-- **Scope creep heuristic**: items whose `createdAt` > sprint `startDate`
+Read `~/.claude/pm-config.json`. If missing, tell the user to run `/pm-setup` first and stop. See `../pm-setup/references/config-loader.md` for config shape and rules.
+
+If no `iteration` field:
+> Velocity tracking requires an Iteration field to measure sprint-over-sprint trends. Add one in project settings and run `/pm-setup`.
 
 ## Workflow
 
-### 1. Fetch iteration config
+### 1. Fetch All Iterations and Items
 
-```bash
-gh api graphql -f query='
-{
-  organization(login: "prestomade") {
-    projectV2(number: 5) {
-      field(name: "Iteration") {
-        ... on ProjectV2IterationField {
-          configuration {
-            iterations { id title startDate duration }
-            completedIterations { id title startDate duration }
-          }
-        }
-      }
-    }
-  }
-}'
-```
+Query iteration config to get completed + current iterations. Then fetch all project items with status, team (if exists), iteration, and content fields.
 
-Collect all completed iterations + the current iteration.
+### 2. Compute Metrics Per Iteration
 
-### 2. Fetch all project items
+For each iteration:
+- **Planned**: total items assigned to that iteration
+- **Completed**: items where status = last entry in `statusFlow`
+- **Per Team**: completed grouped by team (if team field exists)
+- **Per Repo**: completed grouped by repo (if multiple repos)
+- **Scope Creep**: items where `createdAt` > iteration `startDate` (added mid-sprint)
 
-```bash
-gh api graphql --paginate -f query='
-query($endCursor: String) {
-  organization(login: "prestomade") {
-    projectV2(number: 5) {
-      items(first: 100, after: $endCursor) {
-        pageInfo { hasNextPage endCursor }
-        nodes {
-          id
-          status: fieldValueByName(name: "Status") {
-            ... on ProjectV2ItemFieldSingleSelectValue { name }
-          }
-          team: fieldValueByName(name: "Team") {
-            ... on ProjectV2ItemFieldSingleSelectValue { name }
-          }
-          iteration: fieldValueByName(name: "Iteration") {
-            ... on ProjectV2ItemFieldIterationValue { title startDate }
-          }
-          content {
-            ... on Issue {
-              number title createdAt state
-              repository { name }
-              assignees(first: 5) { nodes { login } }
-            }
-          }
-        }
-      }
-    }
-  }
-}'
-```
-
-### 3. Compute metrics per iteration
-
-For each iteration, count:
-- **Planned**: total items in that iteration
-- **Completed**: items with status = "Done"
-- **Per Squad**: completed items grouped by team field
-- **Per Repo**: completed items grouped by repository name
-- **Scope Creep**: items where `createdAt` > iteration `startDate`
-
-### 4. Display velocity report
+### 3. Display Report
 
 ```
 ## Velocity Report
 
 ### Sprint Velocity Trend
-| Sprint | Dates | Planned | Done | Rate | S1 | S2 | S3 |
-|--------|-------|---------|------|------|----|----|-----|
-| Iter 1 | Feb 19 - Mar 4 | 15 | 12 | 80% | 5 | 4 | 3 |
-| Iter 2 | Mar 5 - Mar 18 | 12 | 4 | 33%* | 2 | 1 | 1 |
+| Sprint | Dates | Planned | Done | Rate | <Team columns if applicable> |
+|--------|-------|---------|------|------|-----|
+| <name> | <dates> | N | N | X% | ... |
 
-*Current sprint — in progress
+*Current sprint in progress
 
-### Team Workload (Current Sprint: <name>)
-| Squad | Total | Done | In Progress | In Review | QA | Todo |
-|-------|-------|------|-------------|-----------|-----|------|
-| Squad 1 | 6 | 2 | 2 | 1 | 0 | 1 |
-| Squad 2 | 4 | 1 | 1 | 0 | 0 | 2 |
-| Squad 3 | 3 | 1 | 0 | 0 | 1 | 1 |
+### Team Workload — Current Sprint: <name>
+(only if team field exists)
+| Team | Total | <each status> |
+|------|-------|------|
+| <team> | N | ... |
 
 ### Individual Workload
-| Assignee | Items | Done | In Progress |
-|----------|-------|------|-------------|
-| @dev1 | 3 | 1 | 1 |
-| @dev2 | 2 | 1 | 1 |
-| Unassigned | 2 | 0 | 0 |
+| Assignee | Items | Done | Active |
+|----------|-------|------|--------|
+| @dev | N | N | N |
+| Unassigned | N | N | N |
 
 ### Scope Creep Trend
 | Sprint | Originally Planned | Added Mid-Sprint | Creep % |
 |--------|-------------------|------------------|---------|
-| Iter 1 | 13 | 2 | 15% |
 
 ### Cross-Repo Split
-| Sprint | Free (presto-player) | Pro (presto-player-pro) |
-|--------|---------------------|------------------------|
-| Iter 1 | 9 (75%) | 3 (25%) |
-| Iter 2 | 8 (67%) | 4 (33%) |
+(only if multiple repos)
+| Sprint | <repo1> | <repo2> |
+|--------|---------|---------|
 ```
 
 ## Error Handling
-- No completed iterations: "Not enough data yet. Complete at least one sprint to see velocity trends."
-- Only one iteration: show the data but note "Need 2+ sprints for trend analysis"
+- No iteration field → explain that velocity needs iterations
+- No completed iterations → "Complete at least one sprint to see trends"
+- One iteration → show data, note "Need 2+ sprints for trend analysis"
+- No team field → skip team columns
+- Single repo → skip cross-repo split

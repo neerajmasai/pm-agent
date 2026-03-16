@@ -1,5 +1,5 @@
 #!/bin/bash
-# Setup script for Presto Player PM Agent skills
+# Setup script for GitHub PM Agent skills
 # Creates symlinks from ~/.claude/skills/pm-* to this repo
 
 set -e
@@ -7,8 +7,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_DIR="$HOME/.claude/skills"
 
-echo "Presto Player PM Agent — Setup"
-echo "================================"
+echo "GitHub PM Agent — Setup"
+echo "========================"
 echo ""
 
 # Check prerequisites
@@ -39,7 +39,7 @@ fi
 mkdir -p "$SKILLS_DIR"
 
 # Install each skill
-SKILLS=(pm-daily pm-retro pm-risk pm-roadmap pm-sprint pm-triage pm-velocity)
+SKILLS=(pm-setup pm-daily pm-retro pm-risk pm-roadmap pm-sprint pm-triage pm-velocity)
 
 for skill in "${SKILLS[@]}"; do
     SOURCE="$SCRIPT_DIR/skills/$skill"
@@ -65,4 +65,7 @@ for skill in "${SKILLS[@]}"; do
     echo "  /$skill"
 done
 echo ""
-echo "Open Claude Code and try: /pm-daily"
+echo "Next steps:"
+echo "  1. Add project scopes (one-time): gh auth refresh -h github.com -s read:project -s project"
+echo "  2. Open Claude Code and run: /pm-setup https://github.com/orgs/your-org/projects/N"
+echo "  3. Then try: /pm-daily"
