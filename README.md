@@ -1,4 +1,4 @@
-# GitHub PM Agent for Claude Code
+# GitHub Project Management Skills for Claude Code
 
 A set of 8 Claude Code skills that turn Claude into a project manager for **any GitHub Projects V2** board. Manage sprints, run standups, track risks, plan roadmaps, and more — all from your terminal.
 
